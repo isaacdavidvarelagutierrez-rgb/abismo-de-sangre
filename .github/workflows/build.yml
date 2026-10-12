@@ -1,0 +1,85 @@
+name: Compilar APK y AAB
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip autoconf libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev
+          pip install --upgrade buildozer cython==0.29.37 virtualenv
+
+      - name: Cache de buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ hashFiles('buildozer.spec') }}
+
+      - name: Clave de firma (secreto)
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/abismo.keystore"
+
+      - name: Version (versionCode sube solo)
+        run: |
+          sed -i "s/^android.numeric_version.*/android.numeric_version = ${{ github.run_number }}/" buildozer.spec
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            sed -i "s/^version = .*/version = ${GITHUB_REF_NAME#v}/" buildozer.spec
+          fi
+
+      - name: Compilar APK (descarga directa)
+        env:
+          P4A_RELEASE_KEYSTORE: ${{ runner.temp }}/abismo.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEYALIAS: abismo
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          sed -i "s/^android.release_artifact.*/android.release_artifact = apk/" buildozer.spec
+          buildozer android release
+          mkdir -p dist && cp bin/*.apk dist/AbismoDeSangre.apk
+          rm -f bin/*
+
+      - name: Compilar AAB (Google Play)
+        env:
+          P4A_RELEASE_KEYSTORE: ${{ runner.temp }}/abismo.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEYALIAS: abismo
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          sed -i "s/^android.release_artifact.*/android.release_artifact = aab/" buildozer.spec
+          buildozer android release
+          cp bin/*.aab dist/AbismoDeSangre.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: abismo-android
+          path: dist/*
+
+      - name: Publicar release (link de descarga)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
