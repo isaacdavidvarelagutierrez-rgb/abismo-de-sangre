@@ -2,7 +2,7 @@
 title = Abismo de Sangre
 package.name = abismodesangre
 # CAMBIA "tuusuario" por tu nombre (no se puede cambiar tras publicar)
-package.domain = com.tuusuario
+package.domain = com.isaacvarela
 source.dir = .
 source.include_exts = py,png,jpg,mp3,ogg,wav,json
 source.exclude_dirs = .github,bin,.buildozer
